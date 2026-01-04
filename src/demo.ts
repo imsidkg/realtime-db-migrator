@@ -41,6 +41,16 @@ async function runDemo() {
       );
     `);
     console.log(" Test table 'users' created");
+
+    await pool.query(`
+      INSERT INTO users (name) VALUES
+        ('Alice'),
+        ('Bob'),
+        ('Charlie'),
+        ('Diana'),
+        ('Eve');
+    `);
+    console.log(" Inserted 5 test users");
     console.log();
   } catch (error) {
     console.error("Failed to create table:", error);
@@ -60,9 +70,9 @@ async function runDemo() {
   // Step 4: Create app clients
   console.log("Creating app client instances...");
   const apps = [
-    new AppClient("App-1", "ws://localhost:8080"),
-    new AppClient("App-2", "ws://localhost:8080"),
-    new AppClient("App-3", "ws://localhost:8080"),
+    new AppClient("App-1", "ws://localhost:8080", pool),
+    new AppClient("App-2", "ws://localhost:8080", pool),
+    new AppClient("App-3", "ws://localhost:8080", pool),
   ];
   console.log(` Created ${apps.length} app instances`);
   console.log();

@@ -263,6 +263,75 @@ Apps continue using old queries until APPLY phase. This is safe because PostgreS
 
 Apps switch to querying all columns including the new ones.
 
+## Feature Flag Pattern
+
+The AppClient implements a feature flag pattern to demonstrate schema switching:
+
+### Feature Flag Implementation
+
+```typescript
+class AppClient {
+  private useNewSchema: boolean = false; // Feature flag
+
+  // During APPLY phase, flag is enabled
+  handleApply() {
+    this.useNewSchema = true;
+    console.log("Feature flag enabled: useNewSchema = true");
+  }
+
+  // During ROLLBACK, flag is disabled
+  handleRollback() {
+    this.useNewSchema = false;
+    console.log("Feature flag disabled: useNewSchema = false");
+  }
+}
+```
+
+### How It Works
+
+**Before APPLY phase:**
+
+```typescript
+getUserQueryString();
+// Returns: "SELECT id, name, created_at FROM users"
+// useNewSchema = false
+```
+
+**After APPLY phase:**
+
+```typescript
+getUserQueryString();
+// Returns: "SELECT id, name, created_at, email, email_verified FROM users"
+// useNewSchema = true
+```
+
+### Real Application Usage
+
+In a production application, the feature flag would control:
+
+- Which columns to SELECT in database queries
+- Which fields to include in API responses
+- Which validations to apply to user input
+- Which indexes to use for queries
+
+Example:
+
+```typescript
+async getUser(id: number) {
+  if (this.useNewSchema) {
+    return db.query(`
+      SELECT id, name, created_at, email, email_verified
+      FROM users WHERE id = $1
+    `, [id]);
+  } else {
+    return db.query(`
+      SELECT id, name, created_at
+      FROM users WHERE id = $1
+    `, [id]);
+  }
+}
+```
+
 ## Error Handling and Rollback
 
 ### Timeout Scenario

@@ -1,13 +1,18 @@
 import WebSocket from "ws";
+import { Pool } from "pg";
 import { Phase, type PhaseMessage, type AckMessage } from "../types";
 
 export default class AppClient {
   private ws: WebSocket;
   private appId: string = "";
   private name: string;
+  private useNewSchema: boolean = false;
+  private pool: Pool;
+  private queryInterval: NodeJS.Timeout | null = null;
 
-  constructor(name: string, coordinatorUrl: string) {
+  constructor(name: string, coordinatorUrl: string, pool: Pool) {
     this.name = name;
+    this.pool = pool;
     this.ws = new WebSocket(coordinatorUrl);
 
     this.ws.on("open", () => {
@@ -20,6 +25,7 @@ export default class AppClient {
 
     this.ws.on("close", () => {
       console.log(`[${this.name}] disconnected from coord`);
+      this.stopQueryingDatabase();
     });
 
     this.ws.on("error", (error) => {
@@ -33,6 +39,8 @@ export default class AppClient {
     if (message.type === "WELCOME") {
       this.appId = message.appId;
       console.log(`[${this.name}] received appId: ${this.appId}`);
+
+      this.startQueryingDatabase();
       return;
     }
 
@@ -54,6 +62,12 @@ export default class AppClient {
 
       case Phase.APPLY:
         console.log(`[${this.name}]  Applying new schema`);
+
+        this.useNewSchema = true;
+        console.log(
+          `[${this.name}]  Feature flag enabled: useNewSchema = true`
+        );
+
         setTimeout(() => {
           this.sendAcknowledgment(Phase.APPLY);
         }, 100);
@@ -64,7 +78,12 @@ export default class AppClient {
         break;
 
       case Phase.ROLLBACK:
-        console.log(`[${this.name}]  rolling back `);
+        console.log(`[${this.name}]  rolling back`);
+
+        this.useNewSchema = false;
+        console.log(
+          `[${this.name}]  Feature flag disabled: useNewSchema = false`
+        );
         break;
     }
   }
@@ -80,7 +99,42 @@ export default class AppClient {
     console.log(`[${this.name}] Acknowledged ${phase}`);
   }
 
+  async queryUsers(): Promise<void> {
+    try {
+      let query: string;
+
+      if (this.useNewSchema) {
+        query =
+          "SELECT id, name, created_at, email, email_verified FROM users LIMIT 3";
+      } else {
+        query = "SELECT id, name, created_at FROM users LIMIT 3";
+      }
+
+      const result = await this.pool.query(query);
+      const schemaType = this.useNewSchema ? "NEW" : "OLD";
+      console.log(
+        `[${this.name}] Query with ${schemaType} schema: ${result.rows.length} rows`
+      );
+    } catch (error: any) {
+      console.error(`[${this.name}] Query error:`, error.message);
+    }
+  }
+
+  private startQueryingDatabase() {
+    this.queryInterval = setInterval(() => {
+      this.queryUsers();
+    }, 10000);
+  }
+
+  private stopQueryingDatabase() {
+    if (this.queryInterval) {
+      clearInterval(this.queryInterval);
+      this.queryInterval = null;
+    }
+  }
+
   disconnect() {
+    this.stopQueryingDatabase();
     this.ws.close();
     console.log(`[${this.name}] Disconnecting...`);
   }
